@@ -4,8 +4,6 @@ An alternative sidechain reconstruction and MD refinement pipeline for [BioEmu](
 
 ## Motivation
 
-BioEmu generates high-quality backbone conformational ensembles from sequence, but its built-in post-processing (HPacker + OpenMM with amber99sb) is one of many possible choices for sidechain placement and refinement. This pipeline explores whether a different combination — FlowPacker for sidechains and GROMACS for explicit-solvent MD (with CHARMM36) — produces comparable or better results. It also provides a framework for benchmarking additional sidechain packers and force fields in the future.
-
 As demonstrated by Lewis et al. [(bioRxiv, 2024)](https://doi.org/10.1101/2024.12.05.626885), BioEmu samples functionally relevant conformational changes including large-scale domain motions, local unfolding, and formation of cryptic binding pockets not visible in static crystal structures. The authors highlight potential applications in the identification of binding pockets and allosteric mechanisms in drug discovery, and generation of ensembles for dynamical protein design.
 
 ## How It Works
@@ -38,7 +36,7 @@ Input (PDB ID or FASTA)
 
 - Vacuum EM (Stage 4) fixes backbone geometry before sidechain placement. FlowPacker performs better on geometrically sound backbones.
 - FlowPacker (Stage 6) adds sidechains before MD, since NVT in explicit solvent requires full-atom structures.
-- NVT (Stage 7) relaxes the complete system in a realistic aqueous environment, resolving steric clashes introduced by sidechain packing.
+- NVT (Stage 7) relaxes the complete system in an aqueous environment, resolving steric clashes introduced by sidechain packing.
 
 ## Benchmark: FlowPacker + GROMACS vs HPacker + GROMACS
 
@@ -82,14 +80,14 @@ Additional constraints:
 
 ### System
 
-- Linux (tested on Ubuntu under WSL2)
+- Linux
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
 - GROMACS >= 2021 (`sudo apt install gromacs`)
 - A force field installed in the GROMACS data directory (only if the desired force field is not bundled with GROMACS — common ones like `amber99sb-ildn` and `oplsaa` are included by default; `charmm36-jul2020` used in the example requires a separate download)
 - `reduce` and `probe` from MolProbity (for structure quality scoring)
 - `git-lfs` (for FlowPacker checkpoint files)
 
-### External Repositories
+### External Repositories (option to conda)
 
 The pipeline calls BioEmu and FlowPacker as Python packages/scripts, so their
 source code must be available locally. MolProbity only needs the `reduce` and
@@ -127,7 +125,7 @@ protein_ensemble/
 The pipeline only needs the `reduce` and `probe` command-line tools, not the
 full MolProbity suite. You can install them in whichever way is most convenient:
 
-**Option A — conda** (recommended):
+**Option A — conda**:
 
 ```bash
 conda install -c conda-forge reduce probe
