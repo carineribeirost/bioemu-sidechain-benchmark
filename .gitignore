@@ -5,7 +5,6 @@ __pycache__/
 
 # uv virtual environments
 envs/*-env/.venv/
-envs/*-env/uv.lock
 
 # GROMACS artifacts (leaked to project root by early runs)
 \#*\#
