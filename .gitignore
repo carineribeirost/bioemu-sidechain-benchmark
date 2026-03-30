@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# uv virtual environments
+envs/*-env/.venv/
+envs/*-env/uv.lock
+
+# GROMACS artifacts (leaked to project root by early runs)
+\#*\#
+posre.itp
+mdout.mdp
+
+# Pipeline output
+output/
+
+# Papers and internal docs
+*.pdf
+PLAN.md
+COMPARISON_PLAN.md
+
+# e3nn cache
+cg_coefficients/
+
+# OS
+.DS_Store
