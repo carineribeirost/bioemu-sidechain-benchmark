@@ -1,0 +1,29 @@
+[project]
+name = "flowpacker-env"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "biopython>=1.86",
+    "biotite>=0.41.2",
+    "dm-tree>=0.1.8",
+    "e3nn>=0.6.0",
+    "easydict>=1.13",
+    "modelcif>=1.6",
+    "numpy==1.22.4",
+    "pandas>=1.5.1",
+    "pyyaml>=6.0.3",
+    "tensorboard>=2.20.0",
+    "torch>=2.11.0",
+    "torch-cluster>=1.6.3",
+    "torch-geometric>=2.7.0",
+    "tqdm>=4.67.3",
+]
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+
+[[tool.uv.index]]
+url = "https://download.pytorch.org/whl/cu121"
+default = true

@@ -1,0 +1,21 @@
+[project]
+name = "bioemu-env"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "bioemu",
+    "requests",
+    "pyyaml",
+]
+
+[tool.uv.sources]
+bioemu = { path = "../../../bioemu" }
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+
+[[tool.uv.index]]
+url = "https://download.pytorch.org/whl/cu124"
+default = true
