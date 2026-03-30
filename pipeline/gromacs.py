@@ -22,8 +22,35 @@ def run_gmx(cmd: list[str], stdin_text: str | None = None,
     return result
 
 
+def gen_em_mdp(mdp_path: str, emtol: float, nsteps: int,
+               coulombtype: str = "cutoff") -> None:
+    """Generate energy minimization MDP file."""
+    content = f"""\
+integrator      = steep
+emtol           = {emtol}
+emstep          = 0.01
+nsteps          = {nsteps}
+nstxout         = 0
+nstvout         = 0
+nstenergy       = 500
+nstlog          = 500
+cutoff-scheme   = Verlet
+ns-type         = grid
+nstlist         = 10
+rcoulomb        = 1.0
+rvdw            = 1.0
+coulombtype     = {coulombtype}
+pbc             = xyz
+constraints     = none
+define          = -DPOSRES
+"""
+    with open(mdp_path, "w") as f:
+        f.write(content)
+
+
 def minimize_single(pdb_path: str, out_path: str,
-                    ff: str, mdp: str) -> bool:
+                    ff: str, mdp: str,
+                    restr_fc: int = 50) -> bool:
     """Run vacuum energy minimization on a single GLY structure.
 
     Returns True on success, False on failure.
@@ -44,6 +71,7 @@ def minimize_single(pdb_path: str, out_path: str,
                  "-f", pdb_file, "-o", proc_gro, "-p", topol,
                  "-ff", ff, "-water", "none", "-ignh"], cwd=work)
 
+        fc = str(restr_fc)
         posre = os.path.join(work, "posre.itp")
         if os.path.exists(posre):
             with open(posre, "r") as f:
@@ -55,7 +83,7 @@ def minimize_single(pdb_path: str, out_path: str,
                     try:
                         int(parts[0])
                         float(parts[2])
-                        parts[2] = parts[3] = parts[4] = "50"
+                        parts[2] = parts[3] = parts[4] = fc
                         line = "  ".join(parts)
                     except (ValueError, IndexError):
                         pass
@@ -122,19 +150,17 @@ def run_stage4(config: dict) -> list[str]:
         raise FileNotFoundError(
             f"No GLY PDBs found in {gly_dir}. Run Stage 3 first.")
 
-    root = Path(__file__).resolve().parent.parent
-    mdp_path = str(root / "mdp" / "em_vacuum.mdp")
+    em_vac = gmx_cfg.get("em_vacuum", {})
+    em_steps = em_vac.get("nsteps", 5000)
+    emtol = em_vac.get("emtol", 100)
+    vac_fc = em_vac.get("restraint_fc", 50)
 
-    em_steps = gmx_cfg.get("em_steps", 5000)
     custom_mdp = os.path.join(gly_dir, "em_vacuum.mdp")
-    with open(mdp_path, "r") as f:
-        content = f.read()
-    content = content.replace("nsteps          = 5000",
-                              f"nsteps          = {em_steps}")
-    with open(custom_mdp, "w") as f:
-        f.write(content)
+    gen_em_mdp(custom_mdp, emtol, em_steps, coulombtype="cutoff")
 
-    log.info(f"Running vacuum EM with ff={ff}, em_steps={em_steps}")
+    log.info(
+        f"Running vacuum EM with ff={ff}, emtol={emtol}, "
+        f"nsteps={em_steps}, restraint_fc={vac_fc}")
 
     ok = 0
     fail = 0
@@ -152,7 +178,7 @@ def run_stage4(config: dict) -> list[str]:
             continue
 
         log.info(f"Minimizing {base}...")
-        if minimize_single(pdb, out, ff, custom_mdp):
+        if minimize_single(pdb, out, ff, custom_mdp, vac_fc):
             out_paths.append(out)
             ok += 1
         else:
@@ -208,7 +234,7 @@ constraint-algorithm = LINCS
 
 def nvt_single(pdb_path: str, out_path: str, work: str,
                ff: str, water: str, em_mdp: str,
-               nvt_mdp: str, nvt_cfg: dict, threads: int) -> bool:
+               nvt_mdp: str, gmx_cfg: dict, threads: int) -> bool:
     """Run full NVT refinement on a single structure.
 
     Returns True on success, False on failure.
@@ -218,7 +244,19 @@ def nvt_single(pdb_path: str, out_path: str, work: str,
     em_mdp = os.path.abspath(em_mdp)
     nvt_mdp = os.path.abspath(nvt_mdp)
     out_path = os.path.abspath(out_path)
+
+    nvt_cfg = gmx_cfg.get("nvt", {})
+    box_cfg = gmx_cfg.get("box", {})
+    ion_cfg = gmx_cfg.get("ions", {})
+    em_solv = gmx_cfg.get("em_solvated", {})
+
     restr_fc = nvt_cfg.get("restraint_fc", 5)
+    em_fc = str(em_solv.get("restraint_fc", 500))
+    box_type = box_cfg.get("type", "dodecahedron")
+    box_clear = str(box_cfg.get("clearance", 1.0))
+    ion_conc = str(ion_cfg.get("concentration", 0.15))
+    ion_pname = ion_cfg.get("pname", "NA")
+    ion_nname = ion_cfg.get("nname", "CL")
 
     try:
         run_gmx(["gmx", "pdb2gmx",
@@ -229,7 +267,6 @@ def nvt_single(pdb_path: str, out_path: str, work: str,
 
         topol = os.path.join(work, f"topol_{base}.top")
 
-        # Heavy atom restraints for solvated EM (fc=500)
         posre_def = os.path.join(work, "posre.itp")
         posre_heavy = os.path.join(work, f"posre_heavy_{base}.itp")
         if os.path.exists(posre_def):
@@ -242,7 +279,7 @@ def nvt_single(pdb_path: str, out_path: str, work: str,
                         try:
                             int(parts[0])
                             float(parts[2])
-                            parts[2] = parts[3] = parts[4] = "500"
+                            parts[2] = parts[3] = parts[4] = em_fc
                             f.write("  ".join(parts) + "\n")
                             continue
                         except (ValueError, IndexError):
@@ -267,7 +304,7 @@ def nvt_single(pdb_path: str, out_path: str, work: str,
         run_gmx(["gmx", "editconf",
                  "-f", f"{base}_processed.gro",
                  "-o", f"{base}_boxed.gro",
-                 "-c", "-d", "1.0", "-bt", "dodecahedron"], cwd=work)
+                 "-c", "-d", box_clear, "-bt", box_type], cwd=work)
 
         run_gmx(["gmx", "solvate",
                  "-cp", f"{base}_boxed.gro", "-cs", "spc216.gro",
@@ -285,8 +322,8 @@ def nvt_single(pdb_path: str, out_path: str, work: str,
                  "-s", f"ions_{base}.tpr",
                  "-o", f"{base}_ions.gro",
                  "-p", f"topol_{base}.top",
-                 "-pname", "NA", "-nname", "CL",
-                 "-neutral", "-conc", "0.15"],
+                 "-pname", ion_pname, "-nname", ion_nname,
+                 "-neutral", "-conc", ion_conc],
                 stdin_text="SOL\n", cwd=work)
 
         run_gmx(["gmx", "grompp",
@@ -390,8 +427,12 @@ def run_stage7(config: dict) -> list[str]:
 
     os.makedirs(nvt_dir, exist_ok=True)
 
-    root = Path(__file__).resolve().parent.parent
-    em_mdp = str(root / "mdp" / "em_solvated.mdp")
+    em_solv = gmx_cfg.get("em_solvated", {})
+    em_mdp = os.path.join(nvt_dir, "em_solvated.mdp")
+    gen_em_mdp(em_mdp,
+               emtol=em_solv.get("emtol", 1000),
+               nsteps=em_solv.get("nsteps", 50000),
+               coulombtype="PME")
     nvt_mdp = os.path.join(nvt_dir, "nvt.mdp")
     gen_nvt_mdp(config, nvt_mdp)
 
@@ -425,7 +466,7 @@ def run_stage7(config: dict) -> list[str]:
         log.info(f"NVT refinement: {os.path.basename(pdb)}...")
         if nvt_single(os.path.join(struct_work, os.path.basename(pdb)),
                       out, struct_work, ff, water,
-                      em_mdp, nvt_mdp, nvt_cfg, threads):
+                      em_mdp, nvt_mdp, gmx_cfg, threads):
             out_paths.append(out)
             ok += 1
             shutil.rmtree(struct_work, ignore_errors=True)

@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT))
 
 from pipeline.utils import log
 from pipeline.hpacker import run_hpacker
-from pipeline.gromacs import nvt_single, gen_nvt_mdp
+from pipeline.gromacs import nvt_single, gen_nvt_mdp, gen_em_mdp
 from pipeline.molprobity import score_structures
 
 
@@ -35,12 +35,17 @@ def run_nvt_on_pdbs(pdbs: list[str], nvt_dir: str,
     gmx_cfg = config["gromacs"]
     ff = gmx_cfg["forcefield"]
     water = gmx_cfg["water_model"]
-    nvt_cfg = gmx_cfg["nvt"]
+    nvt_cfg = gmx_cfg.get("nvt", {})
     threads = gmx_cfg.get("threads", 4)
 
     os.makedirs(nvt_dir, exist_ok=True)
 
-    em_mdp = str(ROOT / "mdp" / "em_solvated.mdp")
+    em_solv = gmx_cfg.get("em_solvated", {})
+    em_mdp = os.path.join(nvt_dir, "em_solvated.mdp")
+    gen_em_mdp(em_mdp,
+               emtol=em_solv.get("emtol", 1000),
+               nsteps=em_solv.get("nsteps", 50000),
+               coulombtype="PME")
     nvt_mdp = os.path.join(nvt_dir, "nvt.mdp")
     gen_nvt_mdp(config, nvt_mdp)
 
@@ -75,7 +80,7 @@ def run_nvt_on_pdbs(pdbs: list[str], nvt_dir: str,
         if nvt_single(
                 os.path.join(work, os.path.basename(pdb)),
                 out, work, ff, water, em_mdp, nvt_mdp,
-                nvt_cfg, threads):
+                gmx_cfg, threads):
             out_paths.append(out)
             ok += 1
             shutil.rmtree(work, ignore_errors=True)

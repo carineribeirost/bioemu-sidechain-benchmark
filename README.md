@@ -236,7 +236,7 @@ Each stage checks for existing output before running. If the output already exis
 
 ## Configuration
 
-All parameters are set in `config.yaml`. Here is a fully annotated example:
+All pipeline behavior is controlled through `config.yaml`. Every MD parameter (force field, box geometry, ion concentration, restraint force constants, EM tolerances, NVT settings) is configurable — no need to edit Python scripts.
 
 ```yaml
 protein:
@@ -254,14 +254,33 @@ bioemu:
 gromacs:
   forcefield: charmm36-jul2020  # Must match a .ff directory in GROMACS top/
   water_model: tip3p            # Must match the force field (see table below)
-  em_steps: 5000                # Max steps for vacuum energy minimization
   threads: 8                    # OpenMP threads for mdrun
-  nvt:
+
+  box:
+    type: dodecahedron          # Box geometry (cubic, dodecahedron, octahedron)
+    clearance: 1.0              # Distance from protein to box edge (nm)
+
+  ions:
+    concentration: 0.15         # NaCl concentration (M)
+    pname: NA                   # Positive ion name
+    nname: CL                   # Negative ion name
+
+  em_vacuum:                    # Stage 4: vacuum energy minimization
+    emtol: 100                  # Convergence tolerance (kJ/mol/nm)
+    nsteps: 5000                # Max steps
+    restraint_fc: 50            # Position restraint on all non-H atoms (kJ/mol/nm^2)
+
+  em_solvated:                  # Stage 7: solvated energy minimization (before NVT)
+    emtol: 1000                 # Convergence tolerance (kJ/mol/nm)
+    nsteps: 50000               # Max steps
+    restraint_fc: 500           # Position restraint on heavy atoms (kJ/mol/nm^2)
+
+  nvt:                          # Stage 7: NVT molecular dynamics
     temperature: 300            # Kelvin
-    dt: 0.002                   # Timestep in ps (2 fs)
-    nsteps: 25000               # Total MD steps (50 ps at default dt)
-    restraint_fc: 5             # CA position restraint force constant
-    tcoupl: V-rescale           # Thermostat algorithm
+    dt: 0.002                   # Timestep (ps); 0.002 = 2 fs
+    nsteps: 25000               # Total MD steps (dt * nsteps = simulation time)
+    restraint_fc: 5             # CA position restraint (kJ/mol/nm^2)
+    tcoupl: V-rescale           # Thermostat (V-rescale, berendsen, nose-hoover)
     tau_t: 0.1                  # Temperature coupling time constant (ps)
 
 flowpacker:
