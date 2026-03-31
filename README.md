@@ -27,7 +27,7 @@ Input (PDB ID or FASTA)
         |
   [Stage 6]  Sidechain repacking (FlowPacker)
         |
-  [Stage 7]  NVT MD refinement in explicit solvent (GROMACS)
+  [Stage 7]  MD refinement in explicit solvent (GROMACS: NVT + optional NPT)
         |
   [Stage 8]  Structure quality scoring (reduce + probe + Biopython)
 ```
@@ -36,27 +36,27 @@ Input (PDB ID or FASTA)
 
 - Vacuum EM (Stage 4) fixes backbone geometry before sidechain placement. FlowPacker performs better on geometrically sound backbones.
 - FlowPacker (Stage 6) adds sidechains before MD, since NVT in explicit solvent requires full-atom structures.
-- NVT (Stage 7) relaxes the complete system in an aqueous environment, resolving steric clashes introduced by sidechain packing.
+- MD refinement (Stage 7) relaxes the complete system in an aqueous environment, resolving steric clashes introduced by sidechain packing. NVT equilibrates temperature; optional NPT equilibrates pressure and density.
 
 ## Benchmark: FlowPacker + GROMACS vs HPacker + GROMACS
 
-The central question of this project: does the choice of sidechain packer matter after MD refinement? To answer this, both [FlowPacker](https://gitlab.com/mjslee0921/flowpacker) and [HPacker](https://github.com/gvisani/hpacker) were run on ABL1 kinase (PDB 2HYY, 273 residues). BioEmu generated 10 backbone samples, of which 8 passed quality filtering. Both packers were applied to the same 8 structures, followed by the same GROMACS NVT refinement (CHARMM36, TIP3P, dodecahedron box, 50 ps, 300 K). This isolates the sidechain packer as the only variable.
+The central question of this project: does the choice of sidechain packer matter after MD refinement? To answer this, both [FlowPacker](https://gitlab.com/mjslee0921/flowpacker) and [HPacker](https://github.com/gvisani/hpacker) were run on ABL1 kinase (PDB 2HYY, 273 residues). BioEmu generated 10 backbone samples, of which 8 passed quality filtering. Both packers were applied to the same 8 structures, followed by the same GROMACS MD refinement (CHARMM36, TIP3P, dodecahedron box, NVT 50 ps + NPT 400 ps, 300 K). This isolates the sidechain packer as the only variable.
 
 | Stage | N | Clashscore | Rama Favored | Rama Outlier |
 |---|---|---|---|---|
 | FlowPacker (pre-MD) | 8 | 44.5 | 79.3% | 5.5% |
 | HPacker (pre-MD) | 8 | 44.5 | 79.3% | 5.5% |
-| FlowPacker + NVT | 7 | 0.8 | 80.0% | 6.7% |
-| HPacker + NVT | 6 | 0.6 | 80.6% | 6.0% |
+| FlowPacker + NVT + NPT | 7 | 0.7 | 81.3% | 6.5% |
+| HPacker + NVT + NPT | 7 | 0.6 | 82.4% | 6.4% |
 
 **Key findings:**
 
-- Both packers produce nearly identical pre-MD quality (clashscore 44.5, 79.3% Ramachandran favored).
-- After GROMACS NVT refinement, clashscores drop to < 1.0 for both — the MD refinement step dominates the final structure quality.
-- HPacker+NVT is marginally better post-MD (0.6 vs 0.8 clashscore, 6.0% vs 6.7% outliers), but the difference is within noise for this sample size.
-- **GROMACS success rate differs**: FlowPacker structures had 7/8 (87.5%) NVT success rate, while HPacker had 6/8 (75%). HPacker produced one additional structure with steric clashes too severe for energy minimization to resolve.
+- Both packers produce identical pre-MD quality (clashscore 44.5, 79.3% Ramachandran favored).
+- After GROMACS MD refinement (NVT + NPT), clashscores drop to < 1.0 for both — the MD refinement step dominates the final structure quality.
+- HPacker is marginally better post-MD (0.6 vs 0.7 clashscore, 82.4% vs 81.3% Ramachandran favored), but the difference is within noise for this sample size.
+- **GROMACS success rate**: both packers achieved 7/8 (87.5%). One structure (sample 000) failed energy minimization in both cases.
 
-> **Note:** This benchmark used a short NVT simulation (50 ps) as a proof of concept. Results may differ with longer simulation times, different force fields, or NPT equilibration. This project provides a starting point and framework for more thorough comparisons.
+> **Note:** This benchmark uses short simulation times (NVT 50 ps + NPT 400 ps) as a proof of concept. Results may differ with longer simulation times or different force fields. This project provides a starting point and framework for more thorough comparisons.
 
 FlowPacker is the default in this pipeline. HPacker is available as an optional alternative for comparison (see `run_comparison.py`).
 
@@ -283,6 +283,18 @@ gromacs:
     tcoupl: V-rescale           # Thermostat (V-rescale, berendsen, nose-hoover)
     tau_t: 0.1                  # Temperature coupling time constant (ps)
 
+  npt:                          # Stage 7: NPT equilibration (optional, after NVT)
+    enabled: true               # Set to false to skip NPT
+    temperature: 300            # Kelvin
+    dt: 0.002                   # Timestep (ps)
+    nsteps: 200000              # Total steps (400 ps at default)
+    pressure: 1.0               # Reference pressure (bar)
+    pcoupl: Parrinello-Rahman   # Barostat (Parrinello-Rahman, berendsen, C-rescale)
+    tau_p: 2.0                  # Pressure coupling time constant (ps)
+    tcoupl: V-rescale           # Thermostat
+    tau_t: 0.1                  # Temperature coupling time constant (ps)
+    restraint_fc: 5             # CA position restraint (kJ/mol/nm^2)
+
 flowpacker:
   repo_path: ../flowpacker              # Path to FlowPacker repo
   checkpoint: checkpoints/cluster.pth   # Checkpoint relative to repo_path
@@ -342,12 +354,12 @@ uv run --project envs/bioemu-env python run_pipeline.py config.yaml
 
 Expected results with default settings (10 samples):
 
-| Metric | FlowPacker (pre-NVT) | NVT-refined (post-NVT) |
+| Metric | Pre-MD | Post-MD (NVT + NPT) |
 |---|---|---|
-| Clashscore | ~44 | ~0.8 |
-| Ramachandran favored | ~79% | ~80% |
+| Clashscore | ~44 | ~0.7 |
+| Ramachandran favored | ~79% | ~81% |
 
-The NVT refinement reduces clashes by roughly 50x while maintaining backbone geometry.
+The MD refinement reduces clashes by roughly 60x while improving backbone geometry.
 
 ## Error Handling
 

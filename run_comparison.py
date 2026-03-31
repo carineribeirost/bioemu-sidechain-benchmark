@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT))
 
 from pipeline.utils import log
 from pipeline.hpacker import run_hpacker
-from pipeline.gromacs import nvt_single, gen_nvt_mdp, gen_em_mdp
+from pipeline.gromacs import nvt_single, gen_nvt_mdp, gen_npt_mdp, gen_em_mdp
 from pipeline.molprobity import score_structures
 
 
@@ -49,11 +49,19 @@ def run_nvt_on_pdbs(pdbs: list[str], nvt_dir: str,
     nvt_mdp = os.path.join(nvt_dir, "nvt.mdp")
     gen_nvt_mdp(config, nvt_mdp)
 
+    npt_cfg = gmx_cfg.get("npt", {})
+    npt_enabled = npt_cfg.get("enabled", False)
+    npt_mdp = None
+    if npt_enabled:
+        npt_mdp = os.path.join(nvt_dir, "npt.mdp")
+        gen_npt_mdp(config, npt_mdp)
+
     temp = nvt_cfg.get("temperature", 300)
     dt = nvt_cfg.get("dt", 0.002)
     nsteps = nvt_cfg.get("nsteps", 25000)
+    phases = "NVT + NPT" if npt_enabled else "NVT"
     log.info(
-        f"NVT refinement: ff={ff}, water={water}, "
+        f"{phases} refinement: ff={ff}, water={water}, "
         f"T={temp}K, dt={dt}ps, nsteps={nsteps}")
 
     ok = 0
@@ -80,7 +88,7 @@ def run_nvt_on_pdbs(pdbs: list[str], nvt_dir: str,
         if nvt_single(
                 os.path.join(work, os.path.basename(pdb)),
                 out, work, ff, water, em_mdp, nvt_mdp,
-                gmx_cfg, threads):
+                gmx_cfg, threads, npt_mdp=npt_mdp):
             out_paths.append(out)
             ok += 1
             shutil.rmtree(work, ignore_errors=True)

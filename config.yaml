@@ -42,6 +42,18 @@ gromacs:
     tcoupl: V-rescale             # thermostat (V-rescale, berendsen, nose-hoover)
     tau_t: 0.1                    # temperature coupling time constant (ps)
 
+  npt:
+    enabled: true                 # set to false to skip NPT equilibration
+    temperature: 300              # K
+    dt: 0.002                     # ps (2 fs timestep)
+    nsteps: 200000                # total steps (400 ps at default)
+    pressure: 1.0                 # bar
+    pcoupl: Parrinello-Rahman     # barostat (Parrinello-Rahman, berendsen, C-rescale)
+    tau_p: 2.0                    # pressure coupling time constant (ps)
+    tcoupl: V-rescale             # thermostat
+    tau_t: 0.1                    # temperature coupling time constant (ps)
+    restraint_fc: 5               # kJ/mol/nm^2, CA atoms only
+
 flowpacker:
   repo_path: ../flowpacker                  # path to cloned FlowPacker repo
   checkpoint: checkpoints/cluster.pth       # relative to repo_path

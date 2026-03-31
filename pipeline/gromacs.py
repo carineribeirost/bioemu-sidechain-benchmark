@@ -232,10 +232,58 @@ constraint-algorithm = LINCS
         f.write(content)
 
 
+def gen_npt_mdp(config: dict, mdp_path: str) -> None:
+    """Generate NPT MDP file from config parameters."""
+    npt = config["gromacs"]["npt"]
+    temp = npt.get("temperature", 300)
+    dt = npt.get("dt", 0.002)
+    nsteps = npt.get("nsteps", 200000)
+    tcoupl = npt.get("tcoupl", "V-rescale")
+    tau_t = npt.get("tau_t", 0.1)
+    pcoupl = npt.get("pcoupl", "Parrinello-Rahman")
+    pressure = npt.get("pressure", 1.0)
+    tau_p = npt.get("tau_p", 2.0)
+
+    content = f"""\
+define          = -DPOSRES
+integrator      = md
+dt              = {dt}
+nsteps          = {nsteps}
+nstxout         = 500
+nstvout         = 500
+nstenergy       = 500
+nstlog          = 500
+continuation    = yes
+gen-vel         = no
+cutoff-scheme   = Verlet
+ns-type         = grid
+nstlist         = 10
+rcoulomb        = 1.0
+rvdw            = 1.0
+coulombtype     = PME
+pbc             = xyz
+tcoupl          = {tcoupl}
+tc-grps         = Protein Non-Protein
+tau-t           = {tau_t} {tau_t}
+ref-t           = {temp} {temp}
+pcoupl          = {pcoupl}
+pcoupltype      = isotropic
+tau-p           = {tau_p}
+ref-p           = {pressure}
+compressibility = 4.5e-5
+refcoord-scaling = com
+constraints     = h-bonds
+constraint-algorithm = LINCS
+"""
+    with open(mdp_path, "w") as f:
+        f.write(content)
+
+
 def nvt_single(pdb_path: str, out_path: str, work: str,
                ff: str, water: str, em_mdp: str,
-               nvt_mdp: str, gmx_cfg: dict, threads: int) -> bool:
-    """Run full NVT refinement on a single structure.
+               nvt_mdp: str, gmx_cfg: dict, threads: int,
+               npt_mdp: str | None = None) -> bool:
+    """Run NVT (and optionally NPT) refinement on a single structure.
 
     Returns True on success, False on failure.
     """
@@ -357,8 +405,43 @@ def nvt_single(pdb_path: str, out_path: str, work: str,
                  "-v", "-deffnm", f"nvt_{base}",
                  "-ntmpi", "1", "-ntomp", str(threads)], cwd=work)
 
+        # Determine which phase provides the final structure
+        final_prefix = f"nvt_{base}"
+
+        # Optional NPT equilibration
+        if npt_mdp is not None:
+            npt_mdp_abs = os.path.abspath(npt_mdp)
+            npt_cfg = gmx_cfg.get("npt", {})
+            npt_fc = npt_cfg.get("restraint_fc", 5)
+
+            # Generate CA restraints for NPT (may differ from NVT)
+            run_gmx(["gmx", "genrestr",
+                     "-f", f"{base}_processed.gro",
+                     "-n", f"ca_{base}.ndx",
+                     "-o", f"posre_ca_npt_{base}.itp",
+                     "-fc", str(npt_fc), str(npt_fc), str(npt_fc)],
+                    stdin_text="CA\n", cwd=work)
+
+            _patch_posre(topol, f"posre_ca_npt_{base}.itp")
+
+            run_gmx(["gmx", "grompp",
+                     "-f", npt_mdp_abs,
+                     "-c", f"nvt_{base}.gro",
+                     "-r", f"nvt_{base}.gro",
+                     "-p", f"topol_{base}.top",
+                     "-t", f"nvt_{base}.cpt",
+                     "-o", f"npt_{base}.tpr",
+                     "-maxwarn", "10"], cwd=work)
+
+            run_gmx(["gmx", "mdrun",
+                     "-v", "-deffnm", f"npt_{base}",
+                     "-ntmpi", "1", "-ntomp", str(threads)], cwd=work)
+
+            final_prefix = f"npt_{base}"
+
         run_gmx(["gmx", "trjconv",
-                 "-s", f"nvt_{base}.tpr", "-f", f"nvt_{base}.gro",
+                 "-s", f"{final_prefix}.tpr",
+                 "-f", f"{final_prefix}.gro",
                  "-o", out_path,
                  "-pbc", "mol", "-ur", "compact", "-center"],
                 stdin_text="Protein\nProtein\n", cwd=work)
@@ -366,7 +449,7 @@ def nvt_single(pdb_path: str, out_path: str, work: str,
         for pat in [f"{base}_processed.gro", f"{base}_boxed.gro",
                     f"{base}_solv.gro", f"{base}_ions.gro",
                     f"ions_{base}.*", f"em_{base}*", f"nvt_{base}*",
-                    f"topol_{base}.*", f"posre*{base}*",
+                    f"npt_{base}*", f"topol_{base}.*", f"posre*{base}*",
                     f"heavy_{base}*", f"ca_{base}*",
                     "posre.itp", "mdout.mdp", "#*"]:
             for f in glob.glob(os.path.join(work, pat)):
@@ -376,7 +459,7 @@ def nvt_single(pdb_path: str, out_path: str, work: str,
         return True
 
     except RuntimeError as e:
-        log.error(f"NVT refinement failed for {base}: {e}")
+        log.error(f"MD refinement failed for {base}: {e}")
         return False
 
 
@@ -436,10 +519,18 @@ def run_stage7(config: dict) -> list[str]:
     nvt_mdp = os.path.join(nvt_dir, "nvt.mdp")
     gen_nvt_mdp(config, nvt_mdp)
 
+    npt_cfg = gmx_cfg.get("npt", {})
+    npt_enabled = npt_cfg.get("enabled", False)
+    npt_mdp = None
+    if npt_enabled:
+        npt_mdp = os.path.join(nvt_dir, "npt.mdp")
+        gen_npt_mdp(config, npt_mdp)
+
     temp = nvt_cfg.get("temperature", 300)
     dt = nvt_cfg.get("dt", 0.002)
     nsteps = nvt_cfg.get("nsteps", 25000)
-    log.info(f"Running NVT: ff={ff}, water={water}, "
+    phases = "NVT + NPT" if npt_enabled else "NVT"
+    log.info(f"Running {phases}: ff={ff}, water={water}, "
              f"T={temp}K, dt={dt}ps, nsteps={nsteps}")
 
     ok = 0
@@ -463,10 +554,11 @@ def run_stage7(config: dict) -> list[str]:
         shutil.copy2(pdb, os.path.join(struct_work,
                                        os.path.basename(pdb)))
 
-        log.info(f"NVT refinement: {os.path.basename(pdb)}...")
+        log.info(f"MD refinement: {os.path.basename(pdb)}...")
         if nvt_single(os.path.join(struct_work, os.path.basename(pdb)),
                       out, struct_work, ff, water,
-                      em_mdp, nvt_mdp, gmx_cfg, threads):
+                      em_mdp, nvt_mdp, gmx_cfg, threads,
+                      npt_mdp=npt_mdp):
             out_paths.append(out)
             ok += 1
             shutil.rmtree(struct_work, ignore_errors=True)
