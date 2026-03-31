@@ -402,9 +402,6 @@ ensemble_pipeline/
     envs/
         bioemu-env/         # uv environment for BioEmu
         flowpacker-env/     # uv environment for FlowPacker
-    mdp/
-        em_vacuum.mdp       # GROMACS MDP for vacuum EM (Stage 4)
-        em_solvated.mdp     # GROMACS MDP for solvated EM (Stage 7)
 ```
 
 ## License
