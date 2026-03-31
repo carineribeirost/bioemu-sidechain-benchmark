@@ -64,7 +64,7 @@ FlowPacker is the default in this pipeline. HPacker is available as an optional 
 
 | Tool | Min residues | Max residues | Notes |
 |---|---|---|---|
-| BioEmu | — | — | Memory scales as L²; long sequences need more VRAM |
+| BioEmu | — | — | Monomers only; memory scales as L²; long sequences need more VRAM |
 | FlowPacker | 40 | 512 | Hardcoded limit in the model |
 | GROMACS | — | — | Compute-bound, no sequence limit |
 
@@ -72,6 +72,7 @@ FlowPacker is the default in this pipeline. HPacker is available as an optional 
 
 Additional constraints:
 
+- BioEmu only supports monomeric proteins (single chain) — complexes, multimers, and protein-protein interactions are not supported
 - Only the 20 standard amino acids are supported (no selenomethionine, modified residues, etc.)
 - BioEmu requires internet access on first run to download model weights and generate MSA embeddings via ColabFold
 - GPU with compute capability >= 7.5 (sm_75) is recommended; the pipeline falls back to CPU automatically when no compatible GPU is available, but inference is significantly slower
