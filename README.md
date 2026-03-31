@@ -212,11 +212,32 @@ cd ../..
 
 All commands are run from the `ensemble_pipeline/` directory.
 
-### Full pipeline
+### Running on your own protein
+
+Edit `config.yaml` to specify your target protein:
+
+```yaml
+# Option 1: from PDB
+protein:
+  source: pdb
+  pdb_id: 1ABC          # your PDB ID
+  chain: A               # chain of interest
+  name: my_protein       # name for the output directory
+
+# Option 2: from FASTA
+protein:
+  source: fasta
+  fasta_path: ./my_seq.fasta
+  name: my_protein
+```
+
+Then run:
 
 ```bash
 uv run --project envs/bioemu-env python run_pipeline.py config.yaml
 ```
+
+Results will be saved to `output/my_protein/`. The pipeline handles everything automatically: sequence cleaning, backbone sampling, sidechain packing, MD refinement, and quality scoring. The protein must have between 40 and 512 residues (FlowPacker limitation) and contain only the 20 standard amino acids. HPacker has no sequence length limit — if using HPacker exclusively (via `run_comparison.py`), the 512-residue cap does not apply.
 
 ### Resume from a specific stage
 
