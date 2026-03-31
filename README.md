@@ -366,23 +366,6 @@ output/<protein_name>/
         scores.tsv              # Quality scores (clashscore + Ramachandran)
 ```
 
-## Example: ABL1 Kinase Domain
-
-The included `config.yaml` runs the pipeline on the ABL1 kinase domain (PDB [2HYY](https://www.rcsb.org/structure/2HYY), chain A, 273 residues).
-
-```bash
-uv run --project envs/bioemu-env python run_pipeline.py config.yaml
-```
-
-Expected results with default settings (10 samples):
-
-| Metric | Pre-MD | Post-MD (NVT + NPT) |
-|---|---|---|
-| Clashscore | ~44 | ~0.7 |
-| Ramachandran favored | ~79% | ~81% |
-
-The MD refinement reduces clashes by roughly 60x while improving backbone geometry.
-
 ## Error Handling
 
 - **Per-structure failures**: If GROMACS EM or NVT fails for one structure, it is logged and skipped. The pipeline continues with the remaining structures and reports a summary at the end.
